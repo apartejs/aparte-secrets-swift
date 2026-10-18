@@ -25,7 +25,7 @@ Swift Package Manager. In Xcode: *File → Add Package Dependencies…* and past
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/apartejs/aparte-secrets-swift.git", from: "1.1.0"),
+    .package(url: "https://github.com/apartejs/aparte-secrets-swift.git", from: "1.1.1"),
 ],
 targets: [
     .target(name: "MyApp", dependencies: [
