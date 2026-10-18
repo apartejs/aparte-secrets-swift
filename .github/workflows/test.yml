@@ -1,0 +1,54 @@
+name: test
+on: [push, pull_request]
+
+# The equality references hold secret-shaped strings: they live on Hugging Face, not in this repository.
+env:
+  REFS_URL: https://huggingface.co/apartejs/aparte-secrets/resolve/main/references/references_int8.jsonl
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Reference spans from Hugging Face
+        run: curl -fsSL -o references_int8.jsonl "$REFS_URL"
+      - name: Swift tests
+        run: APARTE_SECRETS_REFS=$PWD/references_int8.jsonl swift test -c release
+      - name: Tests on the iPhone simulator
+        run: |
+          # the newest iPhone simulator installed on the runner, whatever its name
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          ios = sorted((k for k in runtimes if ".iOS-" in k), key=lambda k: [int(p) for p in k.split("iOS-")[1].split("-")])
+          print(next(d["udid"] for k in reversed(ios) for d in runtimes[k] if d["name"].startswith("iPhone")))')
+          xcrun simctl list devices | grep "$udid"
+          # one product gives one scheme named after it; several add "<package>-Package"
+          scheme=$(xcodebuild -list -json | python3 -c '
+          import json, sys
+          s = json.load(sys.stdin)["workspace"]["schemes"]
+          print(next((x for x in s if x.endswith("-Package")), "AparteSecrets"))')
+          echo "scheme: $scheme"
+          # TEST_RUNNER_ variables reach the test process, prefix removed; the simulator reads the runner's disk
+          TEST_RUNNER_APARTE_SECRETS_REFS=$PWD/references_int8.jsonl \
+            xcodebuild test -scheme "$scheme" -configuration Release -destination "id=$udid" 2>&1 \
+            | grep -E "Test Case|Executed|parity|error|failed|SUCCEEDED|FAILED"
+          test ${PIPESTATUS[0]} -eq 0
+      - name: Build for watchOS
+        run: xcodebuild build -scheme AparteSecrets -destination 'generic/platform=watchOS Simulator' -quiet
+      - name: Build for tvOS
+        run: xcodebuild build -scheme AparteSecrets -destination 'generic/platform=tvOS Simulator' -quiet
+      - name: Build for visionOS
+        run: xcodebuild build -scheme AparteSecrets -destination 'generic/platform=visionOS Simulator' -quiet
+
+  linux:
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v5
+      - name: Reference spans from Hugging Face
+        run: |
+          command -v curl || (apt-get update -q && apt-get install -yq curl)
+          curl -fsSL -o references_int8.jsonl "$REFS_URL"
+      - name: Swift tests
+        run: APARTE_SECRETS_REFS=$PWD/references_int8.jsonl swift test -c release
